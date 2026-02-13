@@ -1,36 +1,2560 @@
-# This is a basic workflow to help you get started with Actions
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
 
-name: CI
+const ui = {
+  rotateOverlay: document.getElementById("rotateOverlay"),
+  hud: document.getElementById("hud"),
+  level: document.getElementById("level"),
+  kills: document.getElementById("kills"),
+  survival: document.getElementById("survival"),
+  envName: document.getElementById("envName"),
+  objectiveText: document.getElementById("objectiveText"),
+  healthFill: document.getElementById("healthFill"),
+  healthText: document.getElementById("healthText"),
+  xpFill: document.getElementById("xpFill"),
+  xpText: document.getElementById("xpText"),
 
-# Controls when the workflow will run
-on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  menuRoot: document.getElementById("menuRoot"),
+  startMenu: document.getElementById("startMenu"),
+  levelMenu: document.getElementById("levelMenu"),
+  characterMenu: document.getElementById("characterMenu"),
+  optionsMenu: document.getElementById("optionsMenu"),
 
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
+  startSummary: document.getElementById("startSummary"),
+  startMissionButton: document.getElementById("startMissionButton"),
+  toLevelSelectButton: document.getElementById("toLevelSelectButton"),
+  toCharacterSelectButton: document.getElementById("toCharacterSelectButton"),
+  toOptionsButton: document.getElementById("toOptionsButton"),
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
-jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+  levelGrid: document.getElementById("levelGrid"),
+  levelBackButton: document.getElementById("levelBackButton"),
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+  characterGrid: document.getElementById("characterGrid"),
+  outfitSection: document.getElementById("outfitSection"),
+  outfitGrid: document.getElementById("outfitGrid"),
+  characterBackButton: document.getElementById("characterBackButton"),
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+  volumeSlider: document.getElementById("volumeSlider"),
+  volumeValue: document.getElementById("volumeValue"),
+  optionsBackButton: document.getElementById("optionsBackButton"),
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+  levelUpOverlay: document.getElementById("levelUpOverlay"),
+  upgradeOptions: document.getElementById("upgradeOptions"),
+
+  gameOverOverlay: document.getElementById("gameOverOverlay"),
+  gameOverText: document.getElementById("gameOverText"),
+  gameOverUnlocks: document.getElementById("gameOverUnlocks"),
+  retryButton: document.getElementById("retryButton"),
+  gameOverMenuButton: document.getElementById("gameOverMenuButton"),
+
+  levelCompleteOverlay: document.getElementById("levelCompleteOverlay"),
+  levelCompleteText: document.getElementById("levelCompleteText"),
+  levelCompleteUnlocks: document.getElementById("levelCompleteUnlocks"),
+  nextLevelButton: document.getElementById("nextLevelButton"),
+  levelReplayButton: document.getElementById("levelReplayButton"),
+  levelMenuButton: document.getElementById("levelMenuButton"),
+
+  noLivesOverlay: document.getElementById("noLivesOverlay"),
+  noLivesText: document.getElementById("noLivesText"),
+  lifeRegenText: document.getElementById("lifeRegenText"),
+  adLifeText: document.getElementById("adLifeText"),
+  watchAdLifeButton: document.getElementById("watchAdLifeButton"),
+  noLivesCloseButton: document.getElementById("noLivesCloseButton"),
+
+  mobileStick: document.getElementById("mobileStick"),
+  stickKnob: document.getElementById("stickKnob"),
+};
+
+const keys = new Set();
+const rng = {
+  seed: 7281,
+  next() {
+    this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
+    return this.seed / 4294967296;
+  },
+};
+
+const STORAGE_KEY = "wasteland-sweep-meta-v2";
+const MAX_LIVES = 3;
+const LIFE_REGEN_MS = 30 * 60 * 1000;
+const MAX_AD_FREE_LIVES = 5;
+
+const config = {
+  playerRadius: 14,
+  enemyRadius: 14,
+  pickupRadius: 7,
+  cameraLag: 0.12,
+  worldGrid: 110,
+};
+
+const COMIC_WORDS = {
+  hit: ["BAM", "POW", "THWAK"],
+  beam: ["ZAP", "ZZRT"],
+  blast: ["BOOM", "KRAK"],
+  pickup: ["PING", "XP+"],
+};
+
+const CHARACTERS = [
+  {
+    id: "astronaut",
+    name: "Orion Astronaut",
+    passive: "Void Salvager",
+    passiveDescription: "+10% move speed, +20 pickup range",
+    unlockLevel: 1,
+    colors: { primary: "#97d7ff", core: "#23435e", glow: "#d2ecff" },
+  },
+  {
+    id: "scrapper",
+    name: "Scrap Gunner",
+    passive: "Blast Familiar",
+    passiveDescription: "+25% orbital explosive damage",
+    unlockLevel: 1,
+    colors: { primary: "#efb26d", core: "#613d26", glow: "#ffd8ab" },
+  },
+  {
+    id: "runner",
+    name: "Dune Runner",
+    passive: "Thruster Knees",
+    passiveDescription: "+22% move speed",
+    unlockLevel: 1,
+    colors: { primary: "#f5d389", core: "#5e4828", glow: "#fff1c2" },
+  },
+  {
+    id: "medic",
+    name: "Field Medic",
+    passive: "Auto-Suture",
+    passiveDescription: "+35 max hull, +1.1 regen/s",
+    unlockLevel: 1,
+    colors: { primary: "#b8f18e", core: "#365429", glow: "#e0ffc8" },
+  },
+  {
+    id: "engineer",
+    name: "Arc Engineer",
+    passive: "Overbuilt Barrel",
+    passiveDescription: "+18% projectile damage, +16% projectile size",
+    unlockLevel: 1,
+    colors: { primary: "#ff9a76", core: "#6b3023", glow: "#ffd0bf" },
+  },
+  {
+    id: "outrider",
+    name: "Outrider",
+    passive: "Rapid Feed",
+    passiveDescription: "+18% fire rate",
+    unlockLevel: 1,
+    colors: { primary: "#ffcf88", core: "#6b4720", glow: "#ffe7bb" },
+  },
+  {
+    id: "sentinel",
+    name: "Sentinel",
+    passive: "Bulwark",
+    passiveDescription: "+55 max hull, -14% incoming damage",
+    unlockLevel: 1,
+    colors: { primary: "#c9b9a5", core: "#49433b", glow: "#f3e5d5" },
+  },
+  {
+    id: "nomad",
+    name: "Nomad Dronecaller",
+    passive: "Orbit Seed",
+    passiveDescription: "Start with 1 orbiting explosive mine",
+    unlockLevel: 10,
+    colors: { primary: "#ebb892", core: "#65442e", glow: "#ffe0c7" },
+  },
+  {
+    id: "oracle",
+    name: "Prism Oracle",
+    passive: "Data Surge",
+    passiveDescription: "+24% XP gain, sidekick starts deployed",
+    unlockLevel: 22,
+    colors: { primary: "#9ad4ff", core: "#2b3f68", glow: "#dcf1ff" },
+  },
+  {
+    id: "titan",
+    name: "Titan Exo",
+    passive: "Impact Frame",
+    passiveDescription: "+90 max hull, contact shocks enemies",
+    unlockLevel: 35,
+    colors: { primary: "#f7a770", core: "#622f20", glow: "#ffd8be" },
+  },
+];
+
+const ASTRONAUT_OUTFITS = [
+  {
+    id: "starlight",
+    name: "Starlight",
+    requirement: "Default",
+    isUnlocked: () => true,
+    colors: { primary: "#97d7ff", core: "#23435e", glow: "#d2ecff" },
+  },
+  {
+    id: "rustfire",
+    name: "Rustfire",
+    requirement: "Reach 200 total kills",
+    isUnlocked: (meta) => meta.stats.totalKills >= 200,
+    colors: { primary: "#e69769", core: "#562f21", glow: "#ffd5b9" },
+  },
+  {
+    id: "cobalt",
+    name: "Cobalt",
+    requirement: "Complete 5 levels",
+    isUnlocked: (meta) => meta.stats.levelsCompleted >= 5,
+    colors: { primary: "#78b3ff", core: "#24386a", glow: "#cadfff" },
+  },
+  {
+    id: "sunburst",
+    name: "Sunburst",
+    requirement: "Unlock level 15",
+    isUnlocked: (meta) => meta.highestLevelUnlocked >= 15,
+    colors: { primary: "#f5c96f", core: "#664620", glow: "#ffe6ad" },
+  },
+  {
+    id: "tealstorm",
+    name: "Tealstorm",
+    requirement: "Reach 700 total kills",
+    isUnlocked: (meta) => meta.stats.totalKills >= 700,
+    colors: { primary: "#82e3d1", core: "#214f4a", glow: "#cafaf1" },
+  },
+  {
+    id: "eclipse",
+    name: "Eclipse",
+    requirement: "Unlock level 35 and complete 20 levels",
+    isUnlocked: (meta) => meta.highestLevelUnlocked >= 35 && meta.stats.levelsCompleted >= 20,
+    colors: { primary: "#b89aff", core: "#392c64", glow: "#e6dcff" },
+  },
+];
+
+const LEVEL_PREFIXES = [
+  "Rust",
+  "Solar",
+  "Dust",
+  "Iron",
+  "Saffron",
+  "Cinder",
+  "Salt",
+  "Scorch",
+  "Chrome",
+  "Ash",
+];
+
+const LEVEL_SUFFIXES = ["Basin", "Barrens", "Corridor", "Crater", "Divide"];
+
+function hsl(h, s, l, a = 1) {
+  const hh = ((h % 360) + 360) % 360;
+  if (a >= 1) {
+    return `hsl(${hh}, ${s}%, ${l}%)`;
+  }
+  return `hsla(${hh}, ${s}%, ${l}%, ${a})`;
+}
+
+function createLevels() {
+  const levels = [];
+  for (let i = 1; i <= 50; i += 1) {
+    const row = Math.floor((i - 1) / 10);
+    const col = (i - 1) % 10;
+    const baseHue = 18 + i * 7;
+    const name = `${LEVEL_PREFIXES[col]} ${LEVEL_SUFFIXES[row]}`;
+
+    levels.push({
+      number: i,
+      name,
+      targetTime: 40 + i * 1.8,
+      spawnRate: 0.7 + i * 0.022,
+      enemyHpMul: 0.92 + i * 0.032,
+      enemySpeedMul: 0.92 + i * 0.011,
+      enemyDamageMul: 0.88 + i * 0.015,
+      eliteBonus: i * 0.0028,
+      palette: {
+        skyTop: hsl(baseHue + 14, 72, 70 - (i % 8)),
+        skyBottom: hsl(baseHue - 6, 55, 38 - (i % 5)),
+        stripeA: hsl(baseHue + 20, 70, 74 - (i % 7), 0.12),
+        stripeB: hsl(baseHue - 20, 58, 28 + (i % 7), 0.1),
+        duneLine: hsl(baseHue + 5, 74, 68 - (i % 10), 0.36),
+        grid: hsl(baseHue - 12, 56, 24, 0.2),
+        wreckDark: hsl(baseHue - 8, 36, 16, 0.62),
+        wreckBright: hsl(baseHue + 10, 68, 44, 0.44),
+        dustA: hsl(baseHue + 8, 72, 64, 0.24),
+        dustB: hsl(baseHue - 4, 58, 74, 0.18),
+      },
+    });
+  }
+  return levels;
+}
+
+const LEVELS = createLevels();
+
+function deepClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+const DEFAULT_META = {
+  highestLevelUnlocked: 1,
+  selectedLevel: 1,
+  selectedCharacterId: "astronaut",
+  selectedOutfitId: "starlight",
+  unlockedCharacters: CHARACTERS.filter((c) => c.unlockLevel <= 1).map((c) => c.id),
+  unlockedOutfits: {
+    astronaut: ["starlight"],
+  },
+  completedLevels: [],
+  options: {
+    volume: 0.7,
+  },
+  lives: {
+    current: MAX_LIVES,
+    lastTick: Date.now(),
+    adsUsed: 0,
+  },
+  stats: {
+    totalKills: 0,
+    totalPlaySeconds: 0,
+    levelsCompleted: 0,
+    bestSurvival: 0,
+  },
+};
+
+function loadMeta() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return deepClone(DEFAULT_META);
+    const parsed = JSON.parse(raw);
+    return sanitizeMeta(parsed);
+  } catch {
+    return deepClone(DEFAULT_META);
+  }
+}
+
+function sanitizeMeta(meta) {
+  const clean = deepClone(DEFAULT_META);
+  if (!meta || typeof meta !== "object") return clean;
+
+  clean.highestLevelUnlocked = clamp(Number(meta.highestLevelUnlocked) || 1, 1, 50);
+  clean.selectedLevel = clamp(Number(meta.selectedLevel) || 1, 1, 50);
+
+  const unlockedCharacterSet = new Set(clean.unlockedCharacters);
+  if (Array.isArray(meta.unlockedCharacters)) {
+    for (const id of meta.unlockedCharacters) {
+      if (CHARACTERS.find((c) => c.id === id)) unlockedCharacterSet.add(id);
+    }
+  }
+  clean.unlockedCharacters = Array.from(unlockedCharacterSet);
+
+  if (typeof meta.selectedCharacterId === "string") clean.selectedCharacterId = meta.selectedCharacterId;
+  if (!clean.unlockedCharacters.includes(clean.selectedCharacterId)) clean.selectedCharacterId = "astronaut";
+
+  if (meta.unlockedOutfits && Array.isArray(meta.unlockedOutfits.astronaut)) {
+    clean.unlockedOutfits.astronaut = meta.unlockedOutfits.astronaut.filter((id) => ASTRONAUT_OUTFITS.find((o) => o.id === id));
+    if (!clean.unlockedOutfits.astronaut.includes("starlight")) clean.unlockedOutfits.astronaut.unshift("starlight");
+  }
+
+  if (typeof meta.selectedOutfitId === "string") clean.selectedOutfitId = meta.selectedOutfitId;
+  if (!clean.unlockedOutfits.astronaut.includes(clean.selectedOutfitId)) clean.selectedOutfitId = "starlight";
+
+  if (Array.isArray(meta.completedLevels)) {
+    clean.completedLevels = meta.completedLevels
+      .map((v) => Number(v))
+      .filter((n) => Number.isInteger(n) && n >= 1 && n <= 50);
+  }
+
+  if (meta.options && typeof meta.options === "object") {
+    clean.options.volume = clamp(Number(meta.options.volume) || 0.7, 0, 1);
+  }
+
+  if (meta.lives && typeof meta.lives === "object") {
+    clean.lives.current = clamp(Math.floor(Number(meta.lives.current)), 0, MAX_LIVES);
+    if (!Number.isFinite(clean.lives.current)) clean.lives.current = MAX_LIVES;
+    clean.lives.lastTick = Number(meta.lives.lastTick);
+    if (!Number.isFinite(clean.lives.lastTick)) clean.lives.lastTick = Date.now();
+    clean.lives.adsUsed = clamp(Math.floor(Number(meta.lives.adsUsed)), 0, MAX_AD_FREE_LIVES);
+    if (!Number.isFinite(clean.lives.adsUsed)) clean.lives.adsUsed = 0;
+  }
+
+  if (meta.stats && typeof meta.stats === "object") {
+    clean.stats.totalKills = Math.max(0, Number(meta.stats.totalKills) || 0);
+    clean.stats.totalPlaySeconds = Math.max(0, Number(meta.stats.totalPlaySeconds) || 0);
+    clean.stats.levelsCompleted = Math.max(0, Number(meta.stats.levelsCompleted) || 0);
+    clean.stats.bestSurvival = Math.max(0, Number(meta.stats.bestSurvival) || 0);
+  }
+
+  for (const c of CHARACTERS) {
+    if (clean.highestLevelUnlocked >= c.unlockLevel && !clean.unlockedCharacters.includes(c.id)) {
+      clean.unlockedCharacters.push(c.id);
+    }
+  }
+
+  for (const outfit of ASTRONAUT_OUTFITS) {
+    if (outfit.isUnlocked(clean) && !clean.unlockedOutfits.astronaut.includes(outfit.id)) {
+      clean.unlockedOutfits.astronaut.push(outfit.id);
+    }
+  }
+
+  if (!clean.unlockedCharacters.includes(clean.selectedCharacterId)) clean.selectedCharacterId = "astronaut";
+  if (!clean.unlockedOutfits.astronaut.includes(clean.selectedOutfitId)) clean.selectedOutfitId = "starlight";
+  if (clean.selectedLevel > clean.highestLevelUnlocked) clean.selectedLevel = clean.highestLevelUnlocked;
+
+  normalizeLives(clean);
+
+  return clean;
+}
+
+function saveMeta() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(meta));
+  } catch {
+    // Ignore storage failures (private mode, quota, etc.)
+  }
+}
+
+function normalizeLives(metaObj) {
+  if (!metaObj.lives || typeof metaObj.lives !== "object") {
+    metaObj.lives = { current: MAX_LIVES, lastTick: Date.now(), adsUsed: 0 };
+  }
+
+  metaObj.lives.current = clamp(Math.floor(Number(metaObj.lives.current)), 0, MAX_LIVES);
+  if (!Number.isFinite(metaObj.lives.current)) metaObj.lives.current = MAX_LIVES;
+  metaObj.lives.lastTick = Number(metaObj.lives.lastTick);
+  if (!Number.isFinite(metaObj.lives.lastTick)) metaObj.lives.lastTick = Date.now();
+  metaObj.lives.adsUsed = clamp(Math.floor(Number(metaObj.lives.adsUsed)), 0, MAX_AD_FREE_LIVES);
+  if (!Number.isFinite(metaObj.lives.adsUsed)) metaObj.lives.adsUsed = 0;
+}
+
+function applyLifeRegeneration(metaObj = meta) {
+  normalizeLives(metaObj);
+  const now = Date.now();
+  let changed = false;
+
+  if (metaObj.lives.lastTick > now) {
+    metaObj.lives.lastTick = now;
+    changed = true;
+  }
+
+  if (metaObj.lives.current >= MAX_LIVES) {
+    return changed;
+  }
+
+  const elapsed = now - metaObj.lives.lastTick;
+  const gained = Math.floor(elapsed / LIFE_REGEN_MS);
+  if (gained > 0) {
+    metaObj.lives.current = Math.min(MAX_LIVES, metaObj.lives.current + gained);
+    metaObj.lives.lastTick += gained * LIFE_REGEN_MS;
+    if (metaObj.lives.current >= MAX_LIVES) {
+      metaObj.lives.lastTick = now;
+    }
+    changed = true;
+  }
+
+  return changed;
+}
+
+function getNextLifeMs(metaObj = meta) {
+  normalizeLives(metaObj);
+  if (metaObj.lives.current >= MAX_LIVES) return 0;
+  const now = Date.now();
+  const elapsed = now - metaObj.lives.lastTick;
+  const remaining = LIFE_REGEN_MS - (elapsed % LIFE_REGEN_MS);
+  return clamp(remaining, 0, LIFE_REGEN_MS);
+}
+
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.masterVolume = 0.7;
+    this.lastPlayed = {};
+  }
+
+  unlock() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC();
+    }
+    if (this.ctx.state === "suspended") {
+      this.ctx.resume();
+    }
+  }
+
+  setVolume(v) {
+    this.masterVolume = clamp(v, 0, 1);
+  }
+
+  canPlay(name, minGapMs) {
+    const now = performance.now();
+    if (now - (this.lastPlayed[name] || 0) < minGapMs) {
+      return false;
+    }
+    this.lastPlayed[name] = now;
+    return true;
+  }
+
+  tone({
+    freq = 440,
+    duration = 0.08,
+    type = "sine",
+    gain = 0.2,
+    slide = 0,
+    delay = 0,
+    q = 0.5,
+  }) {
+    if (!this.ctx || this.masterVolume <= 0) return;
+
+    const now = this.ctx.currentTime + delay;
+    const osc = this.ctx.createOscillator();
+    const amp = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    if (slide !== 0) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), now + duration);
+    }
+
+    filter.type = "lowpass";
+    filter.Q.value = q;
+    filter.frequency.setValueAtTime(2600, now);
+
+    amp.gain.setValueAtTime(0.0001, now);
+    amp.gain.exponentialRampToValueAtTime(Math.max(0.00012, gain * this.masterVolume), now + 0.01);
+    amp.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    osc.connect(filter);
+    filter.connect(amp);
+    amp.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + duration + 0.02);
+  }
+
+  menuClick() {
+    if (!this.canPlay("menu", 35)) return;
+    this.tone({ freq: 420, duration: 0.05, type: "triangle", gain: 0.17, slide: -70 });
+  }
+
+  select() {
+    if (!this.canPlay("select", 35)) return;
+    this.tone({ freq: 520, duration: 0.06, type: "triangle", gain: 0.2, slide: 90 });
+  }
+
+  shoot() {
+    if (!this.canPlay("shoot", 30)) return;
+    this.tone({ freq: 700, duration: 0.045, type: "square", gain: 0.12, slide: -220, q: 0.8 });
+  }
+
+  hit() {
+    if (!this.canPlay("hit", 40)) return;
+    this.tone({ freq: 320, duration: 0.04, type: "sawtooth", gain: 0.14, slide: -90 });
+  }
+
+  beam() {
+    if (!this.canPlay("beam", 55)) return;
+    this.tone({ freq: 960, duration: 0.06, type: "triangle", gain: 0.13, slide: -260 });
+  }
+
+  pickup() {
+    if (!this.canPlay("pickup", 45)) return;
+    this.tone({ freq: 520, duration: 0.05, type: "triangle", gain: 0.14, slide: 120 });
+  }
+
+  explosion() {
+    if (!this.canPlay("explosion", 60)) return;
+    this.tone({ freq: 140, duration: 0.12, type: "sawtooth", gain: 0.24, slide: -55 });
+    this.tone({ freq: 260, duration: 0.08, type: "square", gain: 0.1, slide: -140, delay: 0.015 });
+  }
+
+  levelUp() {
+    this.tone({ freq: 420, duration: 0.09, type: "triangle", gain: 0.2, slide: 120 });
+    this.tone({ freq: 560, duration: 0.1, type: "triangle", gain: 0.18, slide: 160, delay: 0.06 });
+  }
+
+  victory() {
+    this.tone({ freq: 520, duration: 0.08, type: "triangle", gain: 0.2, slide: 100 });
+    this.tone({ freq: 700, duration: 0.09, type: "triangle", gain: 0.22, slide: 160, delay: 0.07 });
+    this.tone({ freq: 910, duration: 0.11, type: "triangle", gain: 0.22, slide: 200, delay: 0.16 });
+  }
+
+  gameOver() {
+    this.tone({ freq: 330, duration: 0.1, type: "sawtooth", gain: 0.2, slide: -130 });
+    this.tone({ freq: 240, duration: 0.11, type: "sawtooth", gain: 0.18, slide: -100, delay: 0.08 });
+  }
+}
+
+const sfx = new SoundEngine();
+let meta = loadMeta();
+if (applyLifeRegeneration(meta)) saveMeta();
+sfx.setVolume(meta.options.volume);
+
+let lastFrame = performance.now();
+let state;
+let adCountdownTimer = null;
+
+function createInitialState() {
+  const level = LEVELS[Math.max(0, meta.selectedLevel - 1)];
+  return {
+    screen: "start",
+    running: false,
+    pausedForUpgrade: false,
+    isGameOver: false,
+    isLevelComplete: false,
+    runFinalized: false,
+    elapsed: 0,
+    visualClock: 0,
+    uiClock: 0,
+    kills: 0,
+    camera: { x: 0, y: 0 },
+    spawnClock: 0,
+    fireClock: 0,
+    sidekickClock: 0,
+    shake: 0,
+    beamEffects: [],
+    comicBursts: [],
+    touch: {
+      active: false,
+      id: null,
+      centerX: 0,
+      centerY: 0,
+      x: 0,
+      y: 0,
+    },
+    level,
+    character: getCharacter(meta.selectedCharacterId),
+    outfitId: meta.selectedOutfitId,
+    style: resolveCharacterStyle(meta.selectedCharacterId, meta.selectedOutfitId),
+    modifiers: {
+      incomingDamageMult: 1,
+      xpMult: 1,
+      regenBonus: 0,
+      explosionMult: 1,
+      beamMult: 1,
+      contactShock: 0,
+    },
+    orbitals: {
+      count: 0,
+      radius: 78,
+      spin: 1.85,
+      damage: 28,
+      blastRadius: 72,
+      contactRadius: 13,
+      cooldown: 0.85,
+      angle: 0,
+      mineCooldowns: [],
+    },
+    sidekick: {
+      level: 0,
+      angle: 0,
+      radius: 46,
+      fireRate: 1.2,
+      damage: 15,
+      range: 430,
+      beamCount: 1,
+    },
+    player: {
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      health: 125,
+      maxHealth: 125,
+      level: 1,
+      xp: 0,
+      xpNeeded: 9,
+      speed: 205,
+      damage: 13,
+      fireRate: 2.1,
+      projectileSpeed: 450,
+      projectileSize: 1,
+      pickupRange: 86,
+    },
+    enemies: [],
+    projectiles: [],
+    pickups: [],
+    particles: [],
+  };
+}
+
+function resetRun(levelNumber, characterId, outfitId) {
+  const chosenLevel = LEVELS[clamp(levelNumber, 1, 50) - 1];
+  const chosenCharacter = getCharacter(characterId);
+  const chosenOutfit = outfitId || "starlight";
+
+  state = createInitialState();
+  state.screen = "game";
+  state.running = true;
+  state.level = chosenLevel;
+  state.character = chosenCharacter;
+  state.outfitId = chosenOutfit;
+  state.style = resolveCharacterStyle(chosenCharacter.id, chosenOutfit);
+
+  applyCharacterPassives(state.character);
+  syncOrbitalSlots();
+  clearTransientInput();
+
+  ui.levelUpOverlay.classList.add("hidden");
+  ui.gameOverOverlay.classList.add("hidden");
+  ui.levelCompleteOverlay.classList.add("hidden");
+  hideNoLivesOverlay();
+  ui.menuRoot.classList.add("hidden");
+  ui.hud.classList.remove("hidden");
+
+  updateHud();
+}
+
+function startMission() {
+  if (!isCharacterUnlocked(meta.selectedCharacterId)) {
+    meta.selectedCharacterId = "astronaut";
+  }
+  if (meta.selectedLevel > meta.highestLevelUnlocked) {
+    meta.selectedLevel = meta.highestLevelUnlocked;
+  }
+  if (!meta.unlockedOutfits.astronaut.includes(meta.selectedOutfitId)) {
+    meta.selectedOutfitId = "starlight";
+  }
+
+  if (!canStartMission()) {
+    showNoLivesOverlay();
+    refreshStartSummary();
+    return;
+  }
+
+  saveMeta();
+  hideNoLivesOverlay();
+  tryLockPortrait();
+  updateOrientationGate();
+  resetRun(meta.selectedLevel, meta.selectedCharacterId, meta.selectedOutfitId);
+  sfx.select();
+}
+
+function toMenu(screen = "start") {
+  state.screen = screen;
+  state.running = false;
+  state.pausedForUpgrade = false;
+  clearTransientInput();
+
+  ui.levelUpOverlay.classList.add("hidden");
+  ui.gameOverOverlay.classList.add("hidden");
+  ui.levelCompleteOverlay.classList.add("hidden");
+
+  ui.hud.classList.add("hidden");
+  ui.menuRoot.classList.remove("hidden");
+
+  showMenuScreen(screen);
+  refreshAllMenus();
+}
+
+function showMenuScreen(screen) {
+  const screens = {
+    start: ui.startMenu,
+    level: ui.levelMenu,
+    character: ui.characterMenu,
+    options: ui.optionsMenu,
+  };
+
+  ui.startMenu.classList.add("hidden");
+  ui.levelMenu.classList.add("hidden");
+  ui.characterMenu.classList.add("hidden");
+  ui.optionsMenu.classList.add("hidden");
+
+  if (screens[screen]) screens[screen].classList.remove("hidden");
+  state.screen = screen;
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function length(x, y) {
+  return Math.hypot(x, y);
+}
+
+function normalized(x, y) {
+  const len = Math.hypot(x, y) || 1;
+  return { x: x / len, y: y / len };
+}
+
+function hash2(x, y) {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function isPortraitViewport() {
+  return window.innerHeight >= window.innerWidth;
+}
+
+function shouldEnforcePortraitMode() {
+  return true;
+}
+
+function isPortraitBlocked() {
+  return shouldEnforcePortraitMode() && !isPortraitViewport();
+}
+
+function updateOrientationGate() {
+  const blocked = isPortraitBlocked();
+  document.body.classList.toggle("landscape-blocked", blocked);
+  ui.rotateOverlay.classList.toggle("hidden", !blocked);
+
+  if (blocked && state) {
+    clearTransientInput();
+    hideNoLivesOverlay();
+  }
+}
+
+function tryLockPortrait() {
+  if (!screen.orientation || !screen.orientation.lock) return;
+  screen.orientation.lock("portrait").catch(() => {
+    // iOS Safari may ignore lock requests.
+  });
+}
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
+  canvas.style.width = `${window.innerWidth}px`;
+  canvas.style.height = `${window.innerHeight}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function getCharacter(id) {
+  return CHARACTERS.find((c) => c.id === id) || CHARACTERS[0];
+}
+
+function isCharacterUnlocked(id) {
+  return meta.unlockedCharacters.includes(id);
+}
+
+function getOutfitById(id) {
+  return ASTRONAUT_OUTFITS.find((o) => o.id === id) || ASTRONAUT_OUTFITS[0];
+}
+
+function resolveCharacterStyle(characterId, outfitId) {
+  if (characterId === "astronaut") {
+    const outfit = getOutfitById(outfitId);
+    return outfit.colors;
+  }
+  return getCharacter(characterId).colors;
+}
+
+function applyCharacterPassives(character) {
+  const p = state.player;
+  const mod = state.modifiers;
+
+  switch (character.id) {
+    case "astronaut": {
+      p.speed *= 1.1;
+      p.pickupRange += 20;
+      break;
+    }
+    case "scrapper": {
+      mod.explosionMult *= 1.25;
+      break;
+    }
+    case "runner": {
+      p.speed *= 1.22;
+      break;
+    }
+    case "medic": {
+      p.maxHealth += 35;
+      p.health += 35;
+      mod.regenBonus += 1.1;
+      break;
+    }
+    case "engineer": {
+      p.damage *= 1.18;
+      p.projectileSize *= 1.16;
+      break;
+    }
+    case "outrider": {
+      p.fireRate *= 1.18;
+      break;
+    }
+    case "sentinel": {
+      p.maxHealth += 55;
+      p.health += 55;
+      mod.incomingDamageMult *= 0.86;
+      break;
+    }
+    case "nomad": {
+      state.orbitals.count += 1;
+      break;
+    }
+    case "oracle": {
+      mod.xpMult *= 1.24;
+      state.sidekick.level = Math.max(state.sidekick.level, 1);
+      break;
+    }
+    case "titan": {
+      p.maxHealth += 90;
+      p.health += 90;
+      mod.contactShock = 18;
+      p.speed *= 0.92;
+      break;
+    }
+    default:
+      break;
+  }
+
+  p.health = Math.min(p.health, p.maxHealth);
+}
+
+function syncOrbitalSlots() {
+  const arr = state.orbitals.mineCooldowns;
+  while (arr.length < state.orbitals.count) arr.push(0);
+  arr.length = state.orbitals.count;
+}
+
+function getOrbitalPosition(index) {
+  const orb = state.orbitals;
+  const separation = (Math.PI * 2) / Math.max(1, orb.count);
+  const a = orb.angle + separation * index;
+  return {
+    x: state.player.x + Math.cos(a) * orb.radius,
+    y: state.player.y + Math.sin(a) * orb.radius,
+  };
+}
+
+function getSidekickPosition() {
+  return {
+    x: state.player.x + Math.cos(state.sidekick.angle) * state.sidekick.radius,
+    y: state.player.y + Math.sin(state.sidekick.angle) * state.sidekick.radius,
+  };
+}
+
+function getClosestEnemy(fromX, fromY, range = Infinity) {
+  let nearest = null;
+  let bestDistSq = range * range;
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue;
+    const dx = enemy.x - fromX;
+    const dy = enemy.y - fromY;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestDistSq) {
+      bestDistSq = d2;
+      nearest = enemy;
+    }
+  }
+  return nearest;
+}
+
+function addParticle(x, y, color, intensity = 1) {
+  const count = Math.floor(6 + intensity * 6);
+  for (let i = 0; i < count; i += 1) {
+    const a = rng.next() * Math.PI * 2;
+    const speed = 35 + rng.next() * 120 * intensity;
+    state.particles.push({
+      x,
+      y,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      life: 0.3 + rng.next() * 0.45,
+      maxLife: 0.6,
+      color,
+      size: 1.5 + rng.next() * 2.6,
+    });
+  }
+}
+
+function randomComicWord(type) {
+  const pool = COMIC_WORDS[type] || COMIC_WORDS.hit;
+  return pool[Math.floor(rng.next() * pool.length)];
+}
+
+function addComicBurst(x, y, text, color = "#ffeccf", size = 22) {
+  state.comicBursts.push({
+    x: x + (rng.next() - 0.5) * 12,
+    y: y + (rng.next() - 0.5) * 8,
+    vy: -28 - rng.next() * 22,
+    life: 0.62,
+    maxLife: 0.62,
+    size,
+    text,
+    color,
+    wobble: rng.next() * Math.PI * 2,
+  });
+}
+
+function getMoveInput() {
+  let x = 0;
+  let y = 0;
+
+  if (keys.has("w") || keys.has("arrowup")) y -= 1;
+  if (keys.has("s") || keys.has("arrowdown")) y += 1;
+  if (keys.has("a") || keys.has("arrowleft")) x -= 1;
+  if (keys.has("d") || keys.has("arrowright")) x += 1;
+
+  if (state.touch.active) {
+    const tx = state.touch.x - state.touch.centerX;
+    const ty = state.touch.y - state.touch.centerY;
+    const maxDist = 50;
+    const dist = Math.min(Math.hypot(tx, ty), maxDist);
+    if (dist > 6) {
+      x += tx / maxDist;
+      y += ty / maxDist;
+    }
+  }
+
+  return normalized(x, y);
+}
+
+function spawnEnemy() {
+  const levelFactor = state.elapsed / 35;
+  const angle = rng.next() * Math.PI * 2;
+  const ring = 460 + rng.next() * 320;
+  const ex = state.player.x + Math.cos(angle) * ring;
+  const ey = state.player.y + Math.sin(angle) * ring;
+
+  const eliteChance = 0.04 + state.level.eliteBonus + levelFactor * 0.008;
+  const elite = rng.next() < clamp(eliteChance, 0.04, 0.34);
+
+  const radius = elite ? config.enemyRadius + 7 : config.enemyRadius;
+  const speedBase = elite ? 58 + levelFactor * 3 : 66 + levelFactor * 3;
+  const hpBase = elite ? 44 + levelFactor * 6.2 : 16 + levelFactor * 4;
+  const damageBase = elite ? 10 : 5;
+
+  state.enemies.push({
+    x: ex,
+    y: ey,
+    vx: 0,
+    vy: 0,
+    hp: hpBase * state.level.enemyHpMul,
+    maxHp: hpBase * state.level.enemyHpMul,
+    speed: speedBase * state.level.enemySpeedMul,
+    radius,
+    damage: damageBase * state.level.enemyDamageMul,
+    elite,
+    touchTick: 0,
+  });
+}
+
+function spawnWave(dt) {
+  const baseRate = (0.62 + state.elapsed * 0.012) * state.level.spawnRate;
+  state.spawnClock += dt * baseRate;
+  while (state.spawnClock >= 1) {
+    state.spawnClock -= 1;
+    spawnEnemy();
+  }
+}
+
+function shootAtNearest() {
+  if (state.enemies.length === 0) return;
+  const nearest = getClosestEnemy(state.player.x, state.player.y);
+  if (!nearest) return;
+
+  const dir = normalized(nearest.x - state.player.x, nearest.y - state.player.y);
+  const spread = (rng.next() - 0.5) * 0.08;
+  const cos = Math.cos(spread);
+  const sin = Math.sin(spread);
+  const vx = (dir.x * cos - dir.y * sin) * state.player.projectileSpeed;
+  const vy = (dir.x * sin + dir.y * cos) * state.player.projectileSpeed;
+
+  state.projectiles.push({
+    x: state.player.x + dir.x * 18,
+    y: state.player.y + dir.y * 18,
+    vx,
+    vy,
+    radius: 4 * state.player.projectileSize,
+    damage: state.player.damage,
+    life: 1.6,
+  });
+  sfx.shoot();
+}
+
+function updatePlayer(dt) {
+  const input = getMoveInput();
+  state.player.vx = input.x * state.player.speed;
+  state.player.vy = input.y * state.player.speed;
+  state.player.x += state.player.vx * dt;
+  state.player.y += state.player.vy * dt;
+
+  state.camera.x += (state.player.x - state.camera.x) * config.cameraLag;
+  state.camera.y += (state.player.y - state.camera.y) * config.cameraLag;
+
+  const fireInterval = 1 / state.player.fireRate;
+  state.fireClock += dt;
+  if (state.fireClock >= fireInterval) {
+    state.fireClock -= fireInterval;
+    shootAtNearest();
+  }
+
+  const regen = 1.25 + state.modifiers.regenBonus;
+  state.player.health = Math.min(state.player.maxHealth, state.player.health + dt * regen);
+}
+
+function updateEnemies(dt) {
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue;
+
+    const dir = normalized(state.player.x - enemy.x, state.player.y - enemy.y);
+    enemy.vx = dir.x * enemy.speed;
+    enemy.vy = dir.y * enemy.speed;
+    enemy.x += enemy.vx * dt;
+    enemy.y += enemy.vy * dt;
+
+    const dist = length(enemy.x - state.player.x, enemy.y - state.player.y);
+    if (dist < enemy.radius + config.playerRadius) {
+      if (enemy.touchTick <= 0) {
+        state.player.health -= enemy.damage * state.modifiers.incomingDamageMult;
+        if (state.modifiers.contactShock > 0) {
+          enemy.hp -= state.modifiers.contactShock;
+          addParticle(enemy.x, enemy.y, "#ffda89", 0.42);
+        }
+        enemy.touchTick = 1;
+        state.shake = Math.max(state.shake, enemy.elite ? 6 : 3);
+        addParticle(state.player.x, state.player.y, "#d85151", 0.55);
+      }
+    }
+    enemy.touchTick -= dt;
+  }
+}
+
+function cleanupDeadEnemies() {
+  for (let i = state.enemies.length - 1; i >= 0; i -= 1) {
+    const enemy = state.enemies[i];
+    if (enemy.hp > 0) continue;
+
+    state.enemies.splice(i, 1);
+    state.kills += 1;
+    const xpValue = enemy.elite ? 7 : 3;
+    state.pickups.push({
+      x: enemy.x,
+      y: enemy.y,
+      value: xpValue,
+      radius: config.pickupRadius,
+      t: 0,
+    });
+    addParticle(enemy.x, enemy.y, enemy.elite ? "#e08f4e" : "#9fe398", enemy.elite ? 1.2 : 0.85);
+    if (enemy.elite) {
+      addComicBurst(enemy.x, enemy.y, "KABOOM", "#ffd9aa", 28);
+    }
+  }
+}
+
+function updateProjectiles(dt) {
+  for (let i = state.projectiles.length - 1; i >= 0; i -= 1) {
+    const p = state.projectiles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+
+    let consumed = false;
+    for (let j = state.enemies.length - 1; j >= 0; j -= 1) {
+      const enemy = state.enemies[j];
+      if (enemy.hp <= 0) continue;
+      const dist = length(enemy.x - p.x, enemy.y - p.y);
+      if (dist < enemy.radius + p.radius) {
+        enemy.hp -= p.damage;
+        state.shake = Math.max(state.shake, enemy.elite ? 3 : 2);
+        addParticle(p.x, p.y, "#8fd8bf", 0.25);
+        if (rng.next() < 0.28) {
+          addComicBurst(p.x, p.y, randomComicWord("hit"), "#ffeec9", 20);
+        }
+        sfx.hit();
+        consumed = true;
+        break;
+      }
+    }
+
+    if (consumed || p.life <= 0) {
+      state.projectiles.splice(i, 1);
+    }
+  }
+}
+
+function explodeOrbitalAt(x, y) {
+  const orb = state.orbitals;
+  addParticle(x, y, "#f6b763", 1.25);
+  addParticle(x, y, "#dc6d36", 0.95);
+  addComicBurst(x, y, randomComicWord("blast"), "#ffd49d", 30);
+  state.shake = Math.max(state.shake, 7);
+  sfx.explosion();
+
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue;
+    const dx = enemy.x - x;
+    const dy = enemy.y - y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > orb.blastRadius + enemy.radius) continue;
+
+    const falloff = 1 - clamp(dist / (orb.blastRadius + enemy.radius), 0, 1) * 0.55;
+    const damage = orb.damage * state.modifiers.explosionMult * falloff;
+    enemy.hp -= damage;
+
+    const knock = normalized(dx, dy);
+    enemy.x += knock.x * (16 * falloff);
+    enemy.y += knock.y * (16 * falloff);
+  }
+}
+
+function updateOrbitals(dt) {
+  const orb = state.orbitals;
+  if (orb.count <= 0) return;
+
+  syncOrbitalSlots();
+  orb.angle += dt * orb.spin;
+
+  for (let i = 0; i < orb.count; i += 1) {
+    orb.mineCooldowns[i] = Math.max(0, orb.mineCooldowns[i] - dt);
+    if (orb.mineCooldowns[i] > 0) continue;
+
+    const mine = getOrbitalPosition(i);
+    for (const enemy of state.enemies) {
+      if (enemy.hp <= 0) continue;
+      const dist = length(enemy.x - mine.x, enemy.y - mine.y);
+      if (dist < enemy.radius + orb.contactRadius) {
+        explodeOrbitalAt(mine.x, mine.y);
+        orb.mineCooldowns[i] = orb.cooldown;
+        break;
+      }
+    }
+  }
+}
+
+function updateSidekick(dt) {
+  const sidekick = state.sidekick;
+  if (sidekick.level <= 0) return;
+
+  sidekick.angle += dt * (1.6 + sidekick.level * 0.25);
+  const pos = getSidekickPosition();
+  const sx = pos.x;
+  const sy = pos.y;
+  const fireInterval = 1 / sidekick.fireRate;
+  state.sidekickClock += dt;
+
+  while (state.sidekickClock >= fireInterval) {
+    state.sidekickClock -= fireInterval;
+
+    const candidates = [];
+    for (const enemy of state.enemies) {
+      if (enemy.hp <= 0) continue;
+      const dx = enemy.x - sx;
+      const dy = enemy.y - sy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= sidekick.range * sidekick.range) {
+        candidates.push({ enemy, d2 });
+      }
+    }
+
+    if (candidates.length === 0) continue;
+    candidates.sort((a, b) => a.d2 - b.d2);
+    const shots = Math.min(sidekick.beamCount, candidates.length);
+
+    for (let i = 0; i < shots; i += 1) {
+      const target = candidates[i].enemy;
+      const dmg = sidekick.damage * state.modifiers.beamMult * (1 - i * 0.12);
+      target.hp -= dmg;
+      addParticle(target.x, target.y, "#8fd8ff", 0.5);
+      if (rng.next() < 0.22) {
+        addComicBurst(target.x, target.y, randomComicWord("beam"), "#bbebff", 18);
+      }
+      state.beamEffects.push({
+        x1: sx,
+        y1: sy,
+        x2: target.x,
+        y2: target.y,
+        life: 0.13,
+        maxLife: 0.13,
+      });
+    }
+    sfx.beam();
+  }
+}
+
+function updateBeamEffects(dt) {
+  for (let i = state.beamEffects.length - 1; i >= 0; i -= 1) {
+    state.beamEffects[i].life -= dt;
+    if (state.beamEffects[i].life <= 0) {
+      state.beamEffects.splice(i, 1);
+    }
+  }
+}
+
+function gainXp(amount) {
+  state.player.xp += amount * state.modifiers.xpMult;
+  while (state.player.xp >= state.player.xpNeeded) {
+    state.player.xp -= state.player.xpNeeded;
+    state.player.level += 1;
+    state.player.xpNeeded = Math.floor(9 + state.player.level * 5.2);
+    triggerLevelUp();
+  }
+}
+
+function updatePickups(dt) {
+  const pullRadius = state.player.pickupRange;
+
+  for (let i = state.pickups.length - 1; i >= 0; i -= 1) {
+    const pickup = state.pickups[i];
+    pickup.t += dt;
+    const dx = state.player.x - pickup.x;
+    const dy = state.player.y - pickup.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < pullRadius) {
+      const dir = normalized(dx, dy);
+      const pull = 140 + (pullRadius - dist) * 3;
+      pickup.x += dir.x * pull * dt;
+      pickup.y += dir.y * pull * dt;
+    }
+
+    if (dist < pickup.radius + config.playerRadius) {
+      gainXp(pickup.value);
+      addParticle(pickup.x, pickup.y, "#c9de75", 0.3);
+      if (rng.next() < 0.12) {
+        addComicBurst(pickup.x, pickup.y, randomComicWord("pickup"), "#e8f39d", 16);
+      }
+      state.pickups.splice(i, 1);
+      sfx.pickup();
+    }
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = state.particles.length - 1; i >= 0; i -= 1) {
+    const pt = state.particles[i];
+    pt.x += pt.vx * dt;
+    pt.y += pt.vy * dt;
+    pt.vx *= 0.93;
+    pt.vy *= 0.93;
+    pt.life -= dt;
+    if (pt.life <= 0) {
+      state.particles.splice(i, 1);
+    }
+  }
+}
+
+function updateComicBursts(dt) {
+  for (let i = state.comicBursts.length - 1; i >= 0; i -= 1) {
+    const burst = state.comicBursts[i];
+    burst.life -= dt;
+    burst.y += burst.vy * dt;
+    if (burst.life <= 0) {
+      state.comicBursts.splice(i, 1);
+    }
+  }
+}
+
+const upgradePool = [
+  {
+    id: "damage",
+    name: "Rail Slugs",
+    description: "+25% projectile damage",
+    apply: () => {
+      state.player.damage *= 1.25;
+    },
+  },
+  {
+    id: "fire-rate",
+    name: "Rapid Cycler",
+    description: "+20% fire rate",
+    apply: () => {
+      state.player.fireRate *= 1.2;
+    },
+  },
+  {
+    id: "speed",
+    name: "Thruster Liners",
+    description: "+17% movement speed",
+    apply: () => {
+      state.player.speed *= 1.17;
+    },
+  },
+  {
+    id: "projectile-size",
+    name: "Mag Burst",
+    description: "+24% projectile size",
+    apply: () => {
+      state.player.projectileSize *= 1.24;
+    },
+  },
+  {
+    id: "projectile-speed",
+    name: "Stabilized Barrel",
+    description: "+24% projectile velocity",
+    apply: () => {
+      state.player.projectileSpeed *= 1.24;
+    },
+  },
+  {
+    id: "max-health",
+    name: "Composite Plates",
+    description: "+24 max hull and heal 24",
+    apply: () => {
+      state.player.maxHealth += 24;
+      state.player.health = Math.min(state.player.maxHealth, state.player.health + 24);
+    },
+  },
+  {
+    id: "magnet",
+    name: "Data Magnet",
+    description: "+35 pickup range",
+    apply: () => {
+      state.player.pickupRange += 35;
+    },
+  },
+  {
+    id: "repair",
+    name: "Field Repair",
+    description: "Recover 45% hull",
+    apply: () => {
+      state.player.health = Math.min(state.player.maxHealth, state.player.health + state.player.maxHealth * 0.45);
+    },
+  },
+  {
+    id: "orbital-mine",
+    name: "Scrap Halo",
+    description: "+1 explosive mine orbits and detonates on contact",
+    apply: () => {
+      state.orbitals.count += 1;
+      syncOrbitalSlots();
+    },
+  },
+  {
+    id: "orbital-ordnance",
+    name: "Warhead Mix",
+    description: "+32% orbital blast damage and +12 blast radius",
+    apply: () => {
+      state.orbitals.damage *= 1.32;
+      state.orbitals.blastRadius += 12;
+    },
+  },
+  {
+    id: "orbital-spin",
+    name: "Gyro Fury",
+    description: "+24% orbital spin and -14% mine cooldown",
+    apply: () => {
+      state.orbitals.spin *= 1.24;
+      state.orbitals.cooldown *= 0.86;
+    },
+  },
+  {
+    id: "sidekick",
+    name: "Scout Sidekick",
+    description: "Deploy/boost robot: +6 beam damage, +8% fire rate",
+    apply: () => {
+      state.sidekick.level += 1;
+      state.sidekick.damage += 6;
+      state.sidekick.fireRate *= 1.08;
+    },
+  },
+  {
+    id: "sidekick-overclock",
+    name: "Prism Overclock",
+    description: "+35% sidekick beam damage and +20% fire rate",
+    apply: () => {
+      state.sidekick.level = Math.max(state.sidekick.level, 1);
+      state.sidekick.damage *= 1.35;
+      state.sidekick.fireRate *= 1.2;
+    },
+  },
+  {
+    id: "sidekick-multibeam",
+    name: "Split Lens",
+    description: "Sidekick fires +1 extra beam",
+    apply: () => {
+      state.sidekick.level = Math.max(state.sidekick.level, 1);
+      state.sidekick.beamCount += 1;
+    },
+  },
+  {
+    id: "sidekick-range",
+    name: "Long-Range Antenna",
+    description: "+90 sidekick range and +8 beam damage",
+    apply: () => {
+      state.sidekick.level = Math.max(state.sidekick.level, 1);
+      state.sidekick.range += 90;
+      state.sidekick.damage += 8;
+    },
+  },
+];
+
+function pickUpgradeOptions(count = 3) {
+  const unique = new Set();
+  const choices = [];
+
+  const candidates = upgradePool.filter((u) => {
+    if (u.id.startsWith("sidekick-") && u.id !== "sidekick" && state.sidekick.level <= 0) {
+      return false;
+    }
+    if (u.id.startsWith("orbital-") && u.id !== "orbital-mine" && state.orbitals.count <= 0) {
+      return false;
+    }
+    return true;
+  });
+
+  while (choices.length < count && candidates.length > 0) {
+    const idx = Math.floor(rng.next() * candidates.length);
+    const item = candidates[idx];
+    if (unique.has(item.id)) continue;
+    unique.add(item.id);
+    choices.push(item);
+  }
+
+  return choices;
+}
+
+function triggerLevelUp() {
+  state.pausedForUpgrade = true;
+  ui.upgradeOptions.innerHTML = "";
+  ui.levelUpOverlay.classList.remove("hidden");
+
+  const options = pickUpgradeOptions(3);
+  for (const option of options) {
+    const button = document.createElement("button");
+    button.className = "option-btn";
+    button.innerHTML = `<h3>${option.name}</h3><p>${option.description}</p>`;
+    button.addEventListener("click", () => {
+      option.apply();
+      state.pausedForUpgrade = false;
+      ui.levelUpOverlay.classList.add("hidden");
+      updateHud();
+      sfx.select();
+    });
+    ui.upgradeOptions.appendChild(button);
+  }
+  sfx.levelUp();
+}
+
+function formatTime(seconds) {
+  const s = Math.floor(seconds % 60);
+  const m = Math.floor(seconds / 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function formatDurationMs(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function getLivesStatusLine() {
+  if (applyLifeRegeneration()) saveMeta();
+  const lives = meta.lives.current;
+  const adsLeft = Math.max(0, MAX_AD_FREE_LIVES - meta.lives.adsUsed);
+  if (lives >= MAX_LIVES) {
+    return `Lives: <strong>${lives}/${MAX_LIVES}</strong> | Ad lives left: <strong>${adsLeft}</strong>`;
+  }
+  return `Lives: <strong>${lives}/${MAX_LIVES}</strong> | Next life in <strong>${formatDurationMs(getNextLifeMs())}</strong> | Ad lives left: <strong>${adsLeft}</strong>`;
+}
+
+function refreshNoLivesOverlay() {
+  if (applyLifeRegeneration()) saveMeta();
+  const lives = meta.lives.current;
+  const adsLeft = Math.max(0, MAX_AD_FREE_LIVES - meta.lives.adsUsed);
+  const nextMs = getNextLifeMs();
+
+  ui.noLivesText.textContent = lives > 0
+    ? `You have ${lives} life${lives === 1 ? "" : "s"} available.`
+    : "You are out of lives.";
+  ui.lifeRegenText.textContent = lives >= MAX_LIVES
+    ? "Lives are fully charged."
+    : `Next life in ${formatDurationMs(nextMs)}`;
+  ui.adLifeText.textContent = `Free ad lives left: ${adsLeft}`;
+
+  const canWatchAd = adsLeft > 0 && lives < MAX_LIVES && !adCountdownTimer;
+  ui.watchAdLifeButton.disabled = !canWatchAd;
+  if (!canWatchAd && adsLeft <= 0) {
+    ui.watchAdLifeButton.textContent = "No Free Ad Lives Remaining";
+  } else if (!adCountdownTimer) {
+    ui.watchAdLifeButton.textContent = `Watch Ad for +1 Life (${adsLeft} left)`;
+  }
+}
+
+function showNoLivesOverlay() {
+  refreshNoLivesOverlay();
+  ui.noLivesOverlay.classList.remove("hidden");
+}
+
+function hideNoLivesOverlay() {
+  if (adCountdownTimer) {
+    window.clearInterval(adCountdownTimer);
+    adCountdownTimer = null;
+  }
+  ui.noLivesOverlay.classList.add("hidden");
+}
+
+function watchAdForLife() {
+  applyLifeRegeneration();
+  const adsLeft = Math.max(0, MAX_AD_FREE_LIVES - meta.lives.adsUsed);
+
+  if (adsLeft <= 0 || meta.lives.current >= MAX_LIVES || adCountdownTimer) {
+    refreshNoLivesOverlay();
+    return;
+  }
+
+  let remaining = 5;
+  ui.watchAdLifeButton.disabled = true;
+  ui.watchAdLifeButton.textContent = `Watching Ad... ${remaining}s`;
+
+  adCountdownTimer = window.setInterval(() => {
+    remaining -= 1;
+    if (remaining > 0) {
+      ui.watchAdLifeButton.textContent = `Watching Ad... ${remaining}s`;
+      return;
+    }
+
+    window.clearInterval(adCountdownTimer);
+    adCountdownTimer = null;
+
+    const wasFull = meta.lives.current >= MAX_LIVES;
+    meta.lives.adsUsed += 1;
+    meta.lives.current = Math.min(MAX_LIVES, meta.lives.current + 1);
+    if (!wasFull && meta.lives.current >= MAX_LIVES) {
+      meta.lives.lastTick = Date.now();
+    }
+    saveMeta();
+
+    refreshNoLivesOverlay();
+    refreshStartSummary();
+    sfx.victory();
+  }, 1000);
+}
+
+function canStartMission() {
+  const changed = applyLifeRegeneration();
+  if (changed) saveMeta();
+  return meta.lives.current > 0;
+}
+
+function consumeLifeOnDefeat() {
+  let changed = applyLifeRegeneration();
+  if (meta.lives.current > 0) {
+    const wasFull = meta.lives.current >= MAX_LIVES;
+    meta.lives.current -= 1;
+    if (wasFull && meta.lives.current < MAX_LIVES) {
+      meta.lives.lastTick = Date.now();
+    }
+    changed = true;
+  }
+  if (changed) saveMeta();
+}
+
+function updateHud() {
+  const hpPct = clamp(state.player.health / state.player.maxHealth, 0, 1);
+  const xpPct = clamp(state.player.xp / state.player.xpNeeded, 0, 1);
+
+  ui.level.textContent = String(state.player.level);
+  ui.kills.textContent = String(state.kills);
+  ui.survival.textContent = formatTime(state.elapsed);
+  ui.envName.textContent = `L${state.level.number} ${state.level.name}`;
+  ui.objectiveText.textContent = `Survive ${formatTime(state.elapsed)} / ${formatTime(state.level.targetTime)}`;
+
+  ui.healthFill.style.width = `${hpPct * 100}%`;
+  ui.healthFill.style.background = hpPct < 0.3
+    ? "linear-gradient(90deg, #9d2a2a 0%, #d85151 100%)"
+    : "linear-gradient(90deg, #d08039 0%, #edb166 100%)";
+
+  ui.healthText.textContent = `${Math.max(0, Math.ceil(state.player.health))} / ${Math.ceil(state.player.maxHealth)}`;
+  ui.xpFill.style.width = `${xpPct * 100}%`;
+  ui.xpText.textContent = `${Math.floor(state.player.xp)} / ${Math.floor(state.player.xpNeeded)}`;
+}
+
+function worldToScreen(x, y) {
+  const cx = canvas.clientWidth * 0.5;
+  const cy = canvas.clientHeight * 0.5;
+  return {
+    x: x - state.camera.x + cx,
+    y: y - state.camera.y + cy,
+  };
+}
+
+function drawBackground() {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const t = state.visualClock;
+  const palette = state.level.palette;
+
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, palette.skyTop);
+  bg.addColorStop(0.52, palette.skyBottom);
+  bg.addColorStop(1, hsl(18 + state.level.number * 3, 54, 22));
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  for (let band = 0; band < 6; band += 1) {
+    ctx.fillStyle = band % 2 === 0 ? palette.stripeA : palette.stripeB;
+    const stripeH = 110;
+    const y = ((band * stripeH * 0.9 + state.camera.y * 0.2 + t * 14) % (h + stripeH)) - stripeH;
+    ctx.fillRect(0, y, w, stripeH);
+  }
+
+  ctx.strokeStyle = palette.duneLine;
+  ctx.lineWidth = 2;
+  for (let lane = 0; lane < 6; lane += 1) {
+    ctx.beginPath();
+    const baseY = h * (0.11 + lane * 0.16);
+    for (let x = -40; x <= w + 40; x += 22) {
+      const y = baseY
+        + Math.sin((x + state.camera.x * 0.22 + lane * 73) / 120) * 21
+        + Math.cos((x * 0.35 + t * 18 + lane * 19) / 80) * 8;
+      if (x === -40) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  const step = config.worldGrid;
+  const offsetX = -((state.camera.x % step) + step) % step;
+  const offsetY = -((state.camera.y % step) + step) % step;
+  ctx.strokeStyle = palette.grid;
+  ctx.lineWidth = 1;
+  for (let x = offsetX; x < w; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+  for (let y = offsetY; y < h; y += step) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  const chunkSize = 185;
+  const left = Math.floor((state.camera.x - w * 0.5) / chunkSize) - 1;
+  const right = Math.floor((state.camera.x + w * 0.5) / chunkSize) + 1;
+  const top = Math.floor((state.camera.y - h * 0.5) / chunkSize) - 1;
+  const bottom = Math.floor((state.camera.y + h * 0.5) / chunkSize) + 1;
+
+  for (let gx = left; gx <= right; gx += 1) {
+    for (let gy = top; gy <= bottom; gy += 1) {
+      const n = hash2(gx + state.level.number * 0.7, gy + state.level.number * 0.13);
+      if (n < 0.53) continue;
+
+      const px = gx * chunkSize + hash2(gx + 7, gy + 13) * chunkSize;
+      const py = gy * chunkSize + hash2(gx + 11, gy + 3) * chunkSize;
+      const p = worldToScreen(px, py);
+      const size = 8 + hash2(gx + 17, gy + 23) * 20;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(hash2(gx + 31, gy + 29) * Math.PI);
+      if (n > 0.86) {
+        ctx.fillStyle = palette.wreckDark;
+        ctx.fillRect(-size * 0.7, -size * 0.24, size * 1.4, size * 0.48);
+        ctx.strokeStyle = palette.wreckBright;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-size * 0.75, 0);
+        ctx.lineTo(size * 0.75, 0);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = palette.wreckBright;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(-size, -size * 0.2);
+        ctx.lineTo(size * 0.4, size * 0.1);
+        ctx.lineTo(size, size * 0.35);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  for (let i = 0; i < 70; i += 1) {
+    const dustX = (i * 133.2 + t * 18 + state.camera.x * 0.08) % (w + 140) - 70;
+    const dustY = (i * 83.5 + t * 13 + state.camera.y * 0.04) % (h + 140) - 70;
+    const r = ((i * 17) % 6) + 1;
+    ctx.fillStyle = i % 2 === 0 ? palette.dustA : palette.dustB;
+    ctx.beginPath();
+    ctx.arc(dustX, dustY, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Comic-book halftone pass.
+  ctx.fillStyle = "#1d0f0820";
+  const dotStep = 24;
+  for (let y = 0; y < h; y += dotStep) {
+    for (let x = 0; x < w; x += dotStep) {
+      const wobble = Math.sin((x + y + t * 14) * 0.03) * 1.2;
+      ctx.beginPath();
+      ctx.arc(x + 4, y + 4, 1.5 + wobble * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawPlayer() {
+  const p = worldToScreen(state.player.x, state.player.y);
+  const radius = config.playerRadius;
+  const style = state.style;
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(Math.atan2(state.player.vy, state.player.vx) || 0);
+
+  ctx.fillStyle = style.primary;
+  ctx.beginPath();
+  ctx.moveTo(radius + 5, 0);
+  ctx.lineTo(-radius + 2, -radius + 3);
+  ctx.lineTo(-radius + 2, radius - 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#21110a";
+  ctx.stroke();
+
+  ctx.fillStyle = style.core;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius - 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = "#21110a";
+  ctx.stroke();
+
+  ctx.strokeStyle = style.glow;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(-4, -3, 8, 6);
+  ctx.restore();
+
+  ctx.strokeStyle = "#ffd9aa66";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, state.player.pickupRange, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawOrbitals() {
+  if (state.orbitals.count <= 0) return;
+  const orb = state.orbitals;
+
+  for (let i = 0; i < orb.count; i += 1) {
+    const mine = getOrbitalPosition(i);
+    const p = worldToScreen(mine.x, mine.y);
+    const cooldownPct = clamp(orb.mineCooldowns[i] / orb.cooldown, 0, 1);
+    const glow = 1 - cooldownPct;
+
+    ctx.fillStyle = cooldownPct > 0 ? "#8e8a86" : "#f2b369";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(245, 194, 122, ${0.2 + glow * 0.8})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 11 + Math.sin(state.visualClock * 8 + i) * 1.6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawSidekick() {
+  if (state.sidekick.level <= 0) return;
+  const pos = getSidekickPosition();
+  const p = worldToScreen(pos.x, pos.y);
+
+  ctx.fillStyle = "#8ed6ff";
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = "#1a1210";
+  ctx.stroke();
+
+  ctx.strokeStyle = "#dbf3ff";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "#27465f";
+  ctx.beginPath();
+  ctx.arc(p.x + Math.cos(state.sidekick.angle) * 3, p.y + Math.sin(state.sidekick.angle) * 3, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawEnemies() {
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue;
+    const p = worldToScreen(enemy.x, enemy.y);
+
+    ctx.fillStyle = enemy.elite ? "#b6613b" : "#a05a42";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, enemy.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#2a130a";
+    ctx.stroke();
+
+    ctx.strokeStyle = enemy.elite ? "#ffbb87" : "#df9570";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(p.x - enemy.radius * 0.5, p.y - enemy.radius * 0.2);
+    ctx.lineTo(p.x + enemy.radius * 0.5, p.y + enemy.radius * 0.2);
+    ctx.moveTo(p.x - enemy.radius * 0.2, p.y + enemy.radius * 0.55);
+    ctx.lineTo(p.x + enemy.radius * 0.2, p.y - enemy.radius * 0.55);
+    ctx.stroke();
+
+    if (enemy.elite) {
+      const hpPct = enemy.hp / enemy.maxHp;
+      ctx.fillStyle = "#1f1611";
+      ctx.fillRect(p.x - 16, p.y - enemy.radius - 12, 32, 4);
+      ctx.fillStyle = "#d27741";
+      ctx.fillRect(p.x - 16, p.y - enemy.radius - 12, 32 * hpPct, 4);
+    }
+  }
+}
+
+function drawBeamEffects() {
+  for (const beam of state.beamEffects) {
+    const a = clamp(beam.life / beam.maxLife, 0, 1);
+    const p1 = worldToScreen(beam.x1, beam.y1);
+    const p2 = worldToScreen(beam.x2, beam.y2);
+
+    ctx.strokeStyle = `rgba(152, 233, 255, ${0.15 + a * 0.8})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(238, 252, 255, ${0.25 + a * 0.9})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+}
+
+function drawProjectiles() {
+  for (const bullet of state.projectiles) {
+    const p = worldToScreen(bullet.x, bullet.y);
+    ctx.fillStyle = "#ffd5aa";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, bullet.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = "#2b140a";
+    ctx.stroke();
+  }
+}
+
+function drawPickups() {
+  for (const pickup of state.pickups) {
+    const p = worldToScreen(pickup.x, pickup.y);
+    const pulse = 1 + Math.sin(pickup.t * 8) * 0.18;
+    ctx.fillStyle = "#c9de75";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, pickup.radius * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#e6f0b6aa";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, pickup.radius * pulse + 2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawParticles() {
+  for (const pt of state.particles) {
+    const p = worldToScreen(pt.x, pt.y);
+    const alpha = clamp(pt.life / pt.maxLife, 0, 1);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = pt.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, pt.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawComicBursts() {
+  for (const burst of state.comicBursts) {
+    const p = worldToScreen(burst.x, burst.y);
+    const a = clamp(burst.life / burst.maxLife, 0, 1);
+    const wiggle = Math.sin(state.visualClock * 18 + burst.wobble) * 0.04;
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(wiggle);
+    ctx.globalAlpha = a;
+    ctx.font = `900 ${Math.round(burst.size)}px "Avenir Next", "Helvetica Neue", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#1d0d07";
+    ctx.strokeText(burst.text, 0, 0);
+    ctx.fillStyle = burst.color;
+    ctx.fillText(burst.text, 0, 0);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawMenuPreview() {
+  const cx = canvas.clientWidth * 0.5;
+  const cy = canvas.clientHeight * 0.6;
+  const style = resolveCharacterStyle(meta.selectedCharacterId, meta.selectedOutfitId);
+  const bob = Math.sin(state.visualClock * 2.5) * 5;
+
+  ctx.save();
+  ctx.translate(cx, cy + bob);
+  ctx.rotate(Math.sin(state.visualClock * 1.7) * 0.1);
+  ctx.fillStyle = style.primary;
+  ctx.beginPath();
+  ctx.moveTo(19, 0);
+  ctx.lineTo(-12, -12);
+  ctx.lineTo(-12, 12);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = style.core;
+  ctx.beginPath();
+  ctx.arc(0, 0, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = style.glow;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(-4, -3, 8, 6);
+  ctx.restore();
+}
+
+function render() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.save();
+  if (state.shake > 0) {
+    const sx = (rng.next() - 0.5) * state.shake;
+    const sy = (rng.next() - 0.5) * state.shake;
+    ctx.translate(sx, sy);
+    state.shake *= 0.88;
+  }
+
+  drawBackground();
+
+  if (state.screen === "game") {
+    drawPickups();
+    drawBeamEffects();
+    drawProjectiles();
+    drawOrbitals();
+    drawSidekick();
+    drawEnemies();
+    drawPlayer();
+    drawParticles();
+    drawComicBursts();
+  } else {
+    drawMenuPreview();
+  }
+
+  ctx.restore();
+}
+
+function renderUnlockMessages(container, messages) {
+  container.innerHTML = "";
+  if (!messages || messages.length === 0) return;
+
+  for (const msg of messages) {
+    const el = document.createElement("div");
+    el.className = "unlock-item";
+    el.textContent = msg;
+    container.appendChild(el);
+  }
+}
+
+function clearTransientInput() {
+  keys.clear();
+  state.touch.active = false;
+  state.touch.id = null;
+  ui.mobileStick.classList.add("hidden");
+  updateStickVisual();
+}
+
+function finalizeRun(won) {
+  if (state.runFinalized) return [];
+  state.runFinalized = true;
+
+  const unlockMessages = [];
+  meta.stats.totalKills += state.kills;
+  meta.stats.totalPlaySeconds += state.elapsed;
+  meta.stats.bestSurvival = Math.max(meta.stats.bestSurvival, state.elapsed);
+
+  if (won) {
+    meta.stats.levelsCompleted += 1;
+    if (!meta.completedLevels.includes(state.level.number)) {
+      meta.completedLevels.push(state.level.number);
+    }
+
+    if (meta.highestLevelUnlocked < Math.min(50, state.level.number + 1)) {
+      meta.highestLevelUnlocked = Math.min(50, state.level.number + 1);
+      unlockMessages.push(`Level ${meta.highestLevelUnlocked} unlocked.`);
+    }
+  }
+
+  for (const character of CHARACTERS) {
+    if (character.unlockLevel > 1
+      && meta.highestLevelUnlocked >= character.unlockLevel
+      && !meta.unlockedCharacters.includes(character.id)) {
+      meta.unlockedCharacters.push(character.id);
+      unlockMessages.push(`New character unlocked: ${character.name}.`);
+    }
+  }
+
+  for (const outfit of ASTRONAUT_OUTFITS) {
+    if (outfit.id !== "starlight"
+      && outfit.isUnlocked(meta)
+      && !meta.unlockedOutfits.astronaut.includes(outfit.id)) {
+      meta.unlockedOutfits.astronaut.push(outfit.id);
+      unlockMessages.push(`Astronaut outfit unlocked: ${outfit.name}.`);
+    }
+  }
+
+  if (!meta.unlockedCharacters.includes(meta.selectedCharacterId)) {
+    meta.selectedCharacterId = "astronaut";
+  }
+  if (!meta.unlockedOutfits.astronaut.includes(meta.selectedOutfitId)) {
+    meta.selectedOutfitId = "starlight";
+  }
+  if (meta.selectedLevel > meta.highestLevelUnlocked) {
+    meta.selectedLevel = meta.highestLevelUnlocked;
+  }
+
+  saveMeta();
+  refreshAllMenus();
+  return unlockMessages;
+}
+
+function triggerGameOver() {
+  state.running = false;
+  state.isGameOver = true;
+  clearTransientInput();
+  consumeLifeOnDefeat();
+
+  const unlocks = finalizeRun(false);
+  ui.gameOverText.textContent = `You survived ${formatTime(state.elapsed)} and eliminated ${state.kills} hostiles. Lives left: ${meta.lives.current}/${MAX_LIVES}.`;
+  renderUnlockMessages(ui.gameOverUnlocks, unlocks);
+  ui.retryButton.disabled = meta.lives.current <= 0;
+  ui.gameOverOverlay.classList.remove("hidden");
+  sfx.gameOver();
+}
+
+function triggerLevelComplete() {
+  state.running = false;
+  state.isLevelComplete = true;
+  clearTransientInput();
+
+  const unlocks = finalizeRun(true);
+  ui.levelCompleteText.textContent = `Level ${state.level.number} (${state.level.name}) cleared in ${formatTime(state.elapsed)}.`;
+  renderUnlockMessages(ui.levelCompleteUnlocks, unlocks);
+  ui.levelCompleteOverlay.classList.remove("hidden");
+
+  const hasNext = state.level.number < 50;
+  ui.nextLevelButton.disabled = !hasNext;
+  ui.levelReplayButton.disabled = false;
+  sfx.victory();
+}
+
+function update(dt) {
+  if (!state.running || state.pausedForUpgrade || isPortraitBlocked()) return;
+
+  state.elapsed += dt;
+
+  spawnWave(dt);
+  updatePlayer(dt);
+  updateEnemies(dt);
+  updateOrbitals(dt);
+  updateSidekick(dt);
+  updateProjectiles(dt);
+  cleanupDeadEnemies();
+  updatePickups(dt);
+  updateParticles(dt);
+  updateComicBursts(dt);
+  updateBeamEffects(dt);
+
+  if (state.player.health <= 0) {
+    state.player.health = 0;
+    triggerGameOver();
+    return;
+  }
+
+  if (state.elapsed >= state.level.targetTime) {
+    triggerLevelComplete();
+    return;
+  }
+
+  updateHud();
+}
+
+function loop(now) {
+  const dt = Math.min((now - lastFrame) / 1000, 0.033);
+  lastFrame = now;
+
+  state.visualClock += dt;
+  state.uiClock += dt;
+  if (state.uiClock >= 1) {
+    state.uiClock = 0;
+    const lifeChanged = applyLifeRegeneration();
+    if (lifeChanged) saveMeta();
+    if (state.screen !== "game") refreshStartSummary();
+    if (!ui.gameOverOverlay.classList.contains("hidden")) {
+      ui.retryButton.disabled = meta.lives.current <= 0;
+    }
+    if (!ui.noLivesOverlay.classList.contains("hidden")) refreshNoLivesOverlay();
+  }
+
+  update(dt);
+  render();
+
+  requestAnimationFrame(loop);
+}
+
+function updateStickVisual() {
+  if (!state.touch.active) {
+    ui.stickKnob.style.transform = "translate(0px, 0px)";
+    return;
+  }
+  const dx = clamp(state.touch.x - state.touch.centerX, -34, 34);
+  const dy = clamp(state.touch.y - state.touch.centerY, -34, 34);
+  ui.stickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+}
+
+function onTouchStart(e) {
+  if (state.screen !== "game" || !state.running || state.pausedForUpgrade || isPortraitBlocked()) return;
+  if (!e.changedTouches.length) return;
+  if (e.cancelable) e.preventDefault();
+  const t = e.changedTouches[0];
+  state.touch.active = true;
+  state.touch.id = t.identifier;
+  state.touch.centerX = t.clientX;
+  state.touch.centerY = t.clientY;
+  state.touch.x = t.clientX;
+  state.touch.y = t.clientY;
+  ui.mobileStick.classList.remove("hidden");
+  const left = clamp(t.clientX - 56, 8, window.innerWidth - 120);
+  const top = clamp(t.clientY - 56, 8, window.innerHeight - 120);
+  ui.mobileStick.style.left = `${left}px`;
+  ui.mobileStick.style.top = `${top}px`;
+  ui.mobileStick.style.bottom = "auto";
+  updateStickVisual();
+}
+
+function onTouchMove(e) {
+  if (!state.touch.active) return;
+  if (e.cancelable) e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === state.touch.id) {
+      state.touch.x = t.clientX;
+      state.touch.y = t.clientY;
+      updateStickVisual();
+      break;
+    }
+  }
+}
+
+function onTouchEnd(e) {
+  if (!state.touch.active) return;
+  if (e.cancelable) e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === state.touch.id) {
+      state.touch.active = false;
+      state.touch.id = null;
+      ui.mobileStick.classList.add("hidden");
+      updateStickVisual();
+      break;
+    }
+  }
+}
+
+function refreshStartSummary() {
+  const character = getCharacter(meta.selectedCharacterId);
+  const level = LEVELS[meta.selectedLevel - 1];
+  const outfit = getOutfitById(meta.selectedOutfitId);
+  const outfitText = character.id === "astronaut" ? ` (${outfit.name})` : "";
+
+  ui.startSummary.innerHTML = [
+    `Selected level: <strong>L${level.number} ${level.name}</strong>`,
+    `Selected character: <strong>${character.name}${outfitText}</strong>`,
+    `Progress: <strong>${meta.highestLevelUnlocked}/50</strong> levels unlocked | Completed: <strong>${meta.stats.levelsCompleted}</strong>`,
+    `Total kills: <strong>${Math.floor(meta.stats.totalKills)}</strong>`,
+    getLivesStatusLine(),
+  ].join("<br />");
+}
+
+function buildLevelMenu() {
+  ui.levelGrid.innerHTML = "";
+  for (const level of LEVELS) {
+    const button = document.createElement("button");
+    button.className = "level-btn";
+
+    const unlocked = level.number <= meta.highestLevelUnlocked;
+    if (!unlocked) {
+      button.classList.add("locked");
+      button.disabled = true;
+    }
+    if (meta.selectedLevel === level.number) {
+      button.classList.add("selected");
+    }
+
+    const target = formatTime(level.targetTime);
+    button.innerHTML = `
+      <strong>Level ${level.number}</strong>
+      <small>${level.name}</small>
+      <small>Objective ${target}</small>
+    `;
+
+    if (unlocked) {
+      button.addEventListener("click", () => {
+        meta.selectedLevel = level.number;
+        saveMeta();
+        buildLevelMenu();
+        refreshStartSummary();
+        state.level = LEVELS[meta.selectedLevel - 1];
+        sfx.select();
+      });
+    }
+
+    ui.levelGrid.appendChild(button);
+  }
+}
+
+function buildCharacterMenu() {
+  ui.characterGrid.innerHTML = "";
+
+  for (const character of CHARACTERS) {
+    const card = document.createElement("div");
+    card.className = "character-card";
+    if (meta.selectedCharacterId === character.id) {
+      card.classList.add("selected");
+    }
+
+    const unlocked = isCharacterUnlocked(character.id);
+    const metaText = unlocked
+      ? character.passive
+      : `Unlocks at level ${character.unlockLevel}`;
+
+    const chooseButton = document.createElement("button");
+    chooseButton.textContent = unlocked ? "Select" : "Locked";
+    chooseButton.disabled = !unlocked;
+
+    if (unlocked) {
+      chooseButton.addEventListener("click", () => {
+        meta.selectedCharacterId = character.id;
+        if (character.id !== "astronaut") {
+          meta.selectedOutfitId = "starlight";
+        }
+        saveMeta();
+        buildCharacterMenu();
+        buildOutfitMenu();
+        refreshStartSummary();
+        sfx.select();
+      });
+    }
+
+    card.innerHTML = `
+      <h3>${character.name}</h3>
+      <p>${character.passiveDescription}</p>
+      <div class="character-meta">${metaText}</div>
+    `;
+    card.appendChild(chooseButton);
+    ui.characterGrid.appendChild(card);
+  }
+}
+
+function buildOutfitMenu() {
+  if (meta.selectedCharacterId !== "astronaut") {
+    ui.outfitSection.classList.add("hidden");
+    return;
+  }
+
+  ui.outfitSection.classList.remove("hidden");
+  ui.outfitGrid.innerHTML = "";
+
+  for (const outfit of ASTRONAUT_OUTFITS) {
+    const unlocked = meta.unlockedOutfits.astronaut.includes(outfit.id);
+    const button = document.createElement("button");
+    button.className = "outfit-btn";
+    if (!unlocked) button.classList.add("locked");
+    if (meta.selectedOutfitId === outfit.id) button.classList.add("selected");
+
+    const req = unlocked ? "Unlocked" : outfit.requirement;
+    button.innerHTML = `
+      <strong>${outfit.name}</strong>
+      <small>${req}</small>
+      <div class="swatch" style="background: linear-gradient(90deg, ${outfit.colors.primary}, ${outfit.colors.core});"></div>
+    `;
+
+    if (unlocked) {
+      button.addEventListener("click", () => {
+        meta.selectedOutfitId = outfit.id;
+        saveMeta();
+        buildOutfitMenu();
+        refreshStartSummary();
+        sfx.select();
+      });
+    } else {
+      button.disabled = true;
+    }
+
+    ui.outfitGrid.appendChild(button);
+  }
+}
+
+function refreshOptionsMenu() {
+  ui.volumeSlider.value = String(Math.round(meta.options.volume * 100));
+  ui.volumeValue.textContent = `${Math.round(meta.options.volume * 100)}%`;
+}
+
+function refreshAllMenus() {
+  refreshStartSummary();
+  buildLevelMenu();
+  buildCharacterMenu();
+  buildOutfitMenu();
+  refreshOptionsMenu();
+}
+
+function setupMenus() {
+  ui.startMissionButton.addEventListener("click", () => {
+    sfx.menuClick();
+    startMission();
+  });
+
+  ui.toLevelSelectButton.addEventListener("click", () => {
+    sfx.menuClick();
+    showMenuScreen("level");
+  });
+
+  ui.toCharacterSelectButton.addEventListener("click", () => {
+    sfx.menuClick();
+    showMenuScreen("character");
+  });
+
+  ui.toOptionsButton.addEventListener("click", () => {
+    sfx.menuClick();
+    showMenuScreen("options");
+  });
+
+  ui.levelBackButton.addEventListener("click", () => {
+    sfx.menuClick();
+    showMenuScreen("start");
+  });
+
+  ui.characterBackButton.addEventListener("click", () => {
+    sfx.menuClick();
+    toMenu("start");
+  });
+
+  ui.optionsBackButton.addEventListener("click", () => {
+    sfx.menuClick();
+    showMenuScreen("start");
+  });
+
+  ui.volumeSlider.addEventListener("input", () => {
+    const value = clamp(Number(ui.volumeSlider.value) / 100, 0, 1);
+    meta.options.volume = value;
+    ui.volumeValue.textContent = `${Math.round(value * 100)}%`;
+    sfx.setVolume(value);
+    saveMeta();
+  });
+
+  ui.retryButton.addEventListener("click", () => {
+    sfx.menuClick();
+    if (!canStartMission()) {
+      showNoLivesOverlay();
+      return;
+    }
+    hideNoLivesOverlay();
+    resetRun(state.level.number, meta.selectedCharacterId, meta.selectedOutfitId);
+  });
+
+  ui.gameOverMenuButton.addEventListener("click", () => {
+    sfx.menuClick();
+    toMenu("start");
+  });
+
+  ui.levelReplayButton.addEventListener("click", () => {
+    sfx.menuClick();
+    if (!canStartMission()) {
+      showNoLivesOverlay();
+      return;
+    }
+    hideNoLivesOverlay();
+    resetRun(state.level.number, meta.selectedCharacterId, meta.selectedOutfitId);
+  });
+
+  ui.nextLevelButton.addEventListener("click", () => {
+    sfx.menuClick();
+    if (!canStartMission()) {
+      showNoLivesOverlay();
+      return;
+    }
+    const next = Math.min(50, state.level.number + 1);
+    meta.selectedLevel = Math.min(next, meta.highestLevelUnlocked);
+    saveMeta();
+    hideNoLivesOverlay();
+    resetRun(meta.selectedLevel, meta.selectedCharacterId, meta.selectedOutfitId);
+  });
+
+  ui.levelMenuButton.addEventListener("click", () => {
+    sfx.menuClick();
+    toMenu("start");
+  });
+
+  ui.watchAdLifeButton.addEventListener("click", () => {
+    sfx.menuClick();
+    watchAdForLife();
+  });
+
+  ui.noLivesCloseButton.addEventListener("click", () => {
+    sfx.menuClick();
+    hideNoLivesOverlay();
+    toMenu("start");
+  });
+}
+
+function setupInput() {
+  window.addEventListener("keydown", (e) => {
+    keys.add(e.key.toLowerCase());
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+      e.preventDefault();
+    }
+    sfx.unlock();
+  });
+
+  window.addEventListener("keyup", (e) => {
+    keys.delete(e.key.toLowerCase());
+  });
+
+  window.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+  });
+
+  window.addEventListener("pointerdown", () => {
+    sfx.unlock();
+    tryLockPortrait();
+  }, { passive: true });
+
+  canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+  window.addEventListener("touchmove", onTouchMove, { passive: false });
+  window.addEventListener("touchend", onTouchEnd, { passive: false });
+  window.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+  document.addEventListener("gesturestart", (e) => {
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  const handleViewportChange = () => {
+    resizeCanvas();
+    updateOrientationGate();
+  };
+
+  window.addEventListener("resize", handleViewportChange);
+  window.addEventListener("orientationchange", () => {
+    setTimeout(handleViewportChange, 100);
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", handleViewportChange);
+  }
+}
+
+function init() {
+  state = createInitialState();
+  setupInput();
+  setupMenus();
+  resizeCanvas();
+  updateOrientationGate();
+  refreshAllMenus();
+  toMenu("start");
+
+  requestAnimationFrame((now) => {
+    lastFrame = now;
+    requestAnimationFrame(loop);
+  });
+}
+
+init();
